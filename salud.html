@@ -1,0 +1,295 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Vigilancia epidemiológica</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: encabezado, controles, KPIs, R y casos, mapa de calor por zona */
+:root {
+  --bg: #F3F4F7; --surface: #FFFFFF; --fg: #1E1E1E; --muted: #6B6B6B;
+  --line: #E4E6EC; --accent: #EC6B2F; --blue: #4B77FF; --chip: #F3F4F7;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141414; --surface: #1E1E1E; --fg: #F2F2F2; --muted: #9A9A9A;
+    --line: #333; --chip: #2A2A2A; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141414; --surface: #1E1E1E; --fg: #F2F2F2; --muted: #9A9A9A;
+  --line: #333; --chip: #2A2A2A; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.5 Inter, system-ui, sans-serif;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px;
+}
+h1, h2 { font-family: Poppins, system-ui, sans-serif; margin: 0; text-wrap: balance; }
+h1 { font-size: 26px; font-weight: 700; }
+h2 { font-size: 17px; font-weight: 600; }
+.wrap { max-width: 1200px; margin: 0 auto; display: grid; gap: 16px; }
+header p { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+.card { background: var(--surface); border-radius: 16px; padding: 18px; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+.controls label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); min-width: 0; }
+select {
+  font: inherit; color: var(--fg); background: var(--chip);
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px;
+}
+input[type="range"] { width: min(320px, 70vw); accent-color: var(--accent); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; }
+.kpi { display: grid; gap: 4px; }
+.kpi .label { color: var(--muted); font-size: 13px; }
+.kpi .value { font-family: Poppins, sans-serif; font-size: 40px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi .sub { font-size: 13px; color: var(--muted); }
+.kpi.hot .value { color: var(--accent); }
+.kpi.cool .value { color: var(--blue); }
+.chip {
+  justify-self: start; font-size: 12px; font-weight: 600;
+  padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor;
+}
+.hot .chip { color: var(--accent); }
+.cool .chip { color: var(--blue); }
+.charts { display: grid; gap: 16px; }
+@media (min-width: 900px) { .charts.two { grid-template-columns: 1.2fr 1fr; } }
+.chart-box { position: relative; height: 300px; }
+.heat { width: 100%; border-collapse: separate; border-spacing: 4px; font-variant-numeric: tabular-nums; }
+.heat th { font-weight: 500; color: var(--muted); font-size: 12px; text-align: center; }
+.heat th.zona { text-align: left; }
+.heat td { text-align: center; border-radius: 8px; padding: 10px 4px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.heat td.zona { background: none; text-align: left; color: var(--fg); font-weight: 500; cursor: pointer; padding-left: 4px; }
+.heat tr.sel td.zona { color: var(--accent); }
+.heat td:focus-visible, .heat td.zona:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.legend .l-hot::before { background: var(--accent); }
+.legend .l-cool::before { background: var(--blue); }
+.note { font-size: 12px; color: var(--muted); font-style: italic; margin: 0; }
+button.reset {
+  font: inherit; font-size: 13px; color: var(--fg); background: var(--chip);
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; cursor: pointer;
+}
+button.reset:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Vigilancia epidemiológica por zona</h1>
+    <p>Filtra por zona y por periodo para ver cómo cambia la velocidad de contagio (R) y dónde se concentran los casos.</p>
+  </header>
+
+  <section class="card controls" aria-label="Filtros">
+    <label>Zona
+      <select id="zona">
+        <option value="-1">Todas las zonas</option>
+      </select>
+    </label>
+    <label>Periodo: <span id="diasOut">60 días</span>
+      <input type="range" id="dias" min="14" max="60" step="1" value="60" aria-label="Número de días a mostrar">
+    </label>
+    <button class="reset" id="reset" type="button">Restablecer</button>
+  </section>
+
+  <section class="kpis" aria-label="Indicadores clave">
+    <div class="card kpi" id="kR">
+      <span class="label">R actual</span>
+      <span class="value" id="vR">–</span>
+      <span class="chip" id="cR">–</span>
+    </div>
+    <div class="card kpi">
+      <span class="label">Casos últimos 7 días</span>
+      <span class="value" id="vCasos">–</span>
+      <span class="sub" id="sCasos">–</span>
+    </div>
+    <div class="card kpi">
+      <span class="label">Zonas en alerta (R &gt; 1)</span>
+      <span class="value" id="vZonas">–</span>
+      <span class="sub" id="sZonas">–</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Velocidad de contagio (R)</h2>
+    <p class="note" style="margin:4px 0 10px">Por encima de 1 (naranja) el brote crece. Por debajo de 1 (azul), retrocede.</p>
+    <div class="chart-box"><canvas id="chartR" role="img" aria-label="Gráfico de línea de la velocidad de contagio R"></canvas></div>
+  </section>
+
+  <section class="charts two">
+    <div class="card">
+      <h2>Casos diarios y tendencia</h2>
+      <p class="note" style="margin:4px 0 10px">Barras: casos de cada día. Línea: promedio de 7 días.</p>
+      <div class="chart-box"><canvas id="chartC" role="img" aria-label="Casos diarios con promedio móvil"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Mapa de calor por zona</h2>
+      <p class="note" style="margin:4px 0 10px">R promedio por semana. Toca una zona para filtrar.</p>
+      <table class="heat" id="heat"></table>
+      <div class="legend" style="margin-top:12px">
+        <span class="l-cool">R &lt; 1 retrocede</span>
+        <span class="l-hot">R &gt; 1 crece</span>
+      </div>
+    </div>
+  </section>
+
+  <p class="note">Datos ilustrativos generados para la presentación. No corresponden a casos reales.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const ZONAS = [
+  { name: "Norte",     r0: 0.95, up: 0.012, tp: 28, down: 0.030, seed: 11 },
+  { name: "Sur",       r0: 1.05, up: 0.015, tp: 35, down: 0.020, seed: 22 },
+  { name: "Oriente",   r0: 0.90, up: 0.010, tp: 22, down: 0.040, seed: 33 },
+  { name: "Occidente", r0: 1.10, up: 0.008, tp: 45, down: 0.010, seed: 44 }
+];
+const N = 60;
+const ORANGE = "#EC6B2F", BLUE = "#4B77FF";
+
+function rng(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// Datos ilustrativos: cada zona tiene una curva de R y casos diarios
+const DATA = ZONAS.map(z => {
+  const g = rng(z.seed);
+  let c = 15; const R = [], C = [];
+  for (let t = 0; t < N; t++) {
+    let r = t < z.tp ? z.r0 + z.up * t : Math.max(0.4, z.r0 + z.up * z.tp - z.down * (t - z.tp));
+    r = Math.min(1.8, Math.max(0.4, r + (g() - 0.5) * 0.06));
+    c = Math.max(2, c * Math.pow(r, 0.6) + (g() - 0.5) * 3);
+    R.push(+r.toFixed(2)); C.push(Math.round(c));
+  }
+  return { ...z, R, C };
+});
+
+// Serie agregada (todas las zonas o una) para todo el periodo
+function serie(idx) {
+  if (idx >= 0) return { R: DATA[idx].R, C: DATA[idx].C };
+  const C = Array(N).fill(0), R = Array(N).fill(0);
+  for (let t = 0; t < N; t++) {
+    let tot = 0, wr = 0;
+    DATA.forEach(z => { tot += z.C[t]; wr += z.R[t] * z.C[t]; });
+    C[t] = tot; R[t] = +(wr / tot).toFixed(2);
+  }
+  return { R, C };
+}
+function ma7(arr) {
+  return arr.map((_, i) => {
+    const from = Math.max(0, i - 6), slice = arr.slice(from, i + 1);
+    return +(slice.reduce((a, b) => a + b, 0) / slice.length).toFixed(1);
+  });
+}
+
+const el = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const sel = el("zona"), rango = el("dias");
+
+ZONAS.forEach((z, i) => sel.add(new Option(z.name, i)));
+
+const chartR = new Chart(el("chartR"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { label: "R efectivo", data: [], borderWidth: 3, pointRadius: 0, tension: 0.3,
+      segment: { borderColor: ctx => (ctx.p1.parsed.y >= 1 ? ORANGE : BLUE) } },
+    { label: "Umbral R = 1", data: [], borderColor: css("--muted"), borderDash: [6, 6], borderWidth: 1.5, pointRadius: 0 }
+  ] },
+  options: baseOpts({ y: { min: 0.4, max: 1.8 } })
+});
+const chartC = new Chart(el("chartC"), {
+  type: "bar",
+  data: { labels: [], datasets: [
+    { type: "bar", label: "Casos diarios", data: [], backgroundColor: "rgba(75,119,255,0.28)", borderRadius: 3 },
+    { type: "line", label: "Promedio 7 días", data: [], borderColor: BLUE, borderWidth: 3, pointRadius: 0, tension: 0.3 }
+  ] },
+  options: baseOpts({ y: { beginAtZero: true } })
+});
+
+function baseOpts(scales) {
+  const muted = css("--muted"), line = css("--line"), fg = css("--fg");
+  return {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: { legend: { labels: { color: fg, boxWidth: 12 } } },
+    scales: {
+      y: { grid: { color: line }, ticks: { color: muted }, ...scales.y },
+      x: { grid: { display: false }, ticks: { color: muted, maxTicksLimit: 10 } }
+    }
+  };
+}
+
+function render() {
+  const idx = +sel.value, dias = +rango.value;
+  el("diasOut").textContent = dias + " días";
+  const { R, C } = serie(idx);
+  const start = N - dias;
+  const labels = Array.from({ length: dias }, (_, i) => "D" + (start + i + 1));
+  const Rw = R.slice(start), Cw = C.slice(start), M = ma7(C).slice(start);
+
+  chartR.data.labels = labels;
+  chartR.data.datasets[0].data = Rw;
+  chartR.data.datasets[1].data = labels.map(() => 1);
+  chartR.update();
+  chartC.data.labels = labels;
+  chartC.data.datasets[0].data = Cw;
+  chartC.data.datasets[1].data = M;
+  chartC.update();
+
+  // KPIs
+  const rLast = R[N - 1];
+  const hot = rLast >= 1;
+  el("kR").className = "card kpi " + (hot ? "hot" : "cool");
+  el("vR").textContent = rLast.toFixed(2);
+  el("cR").textContent = hot ? "Crece" : "Retrocede";
+
+  const last7 = C.slice(N - 7).reduce((a, b) => a + b, 0);
+  const prev7 = C.slice(N - 14, N - 7).reduce((a, b) => a + b, 0);
+  const delta = ((last7 - prev7) / prev7) * 100;
+  el("vCasos").textContent = last7.toLocaleString("es-CO");
+  el("sCasos").textContent = (delta >= 0 ? "+" : "") + delta.toFixed(0) + " % frente a la semana anterior";
+
+  const alerta = DATA.filter(z => z.R[N - 1] > 1).length;
+  el("vZonas").textContent = alerta + " de " + ZONAS.length;
+  el("sZonas").textContent = idx >= 0
+    ? "Zona " + ZONAS[idx].name + ": " + (DATA[idx].R[N - 1] > 1 ? "en alerta" : "bajo control")
+    : "Según R del último día";
+
+  renderHeat(idx);
+}
+
+function renderHeat(idx) {
+  const table = el("heat");
+  const weeks = Array.from({ length: 8 }, (_, k) => "S" + (k + 1));
+  let html = "<thead><tr><th class='zona'>Zona</th>" + weeks.map(w => "<th>" + w + "</th>").join("") + "</tr></thead><tbody>";
+  DATA.forEach((z, zi) => {
+    html += "<tr class='" + (zi === idx ? "sel" : "") + "'>";
+    html += "<td class='zona' tabindex='0' data-i='" + zi + "'>" + z.name + "</td>";
+    for (let k = 0; k < 8; k++) {
+      const from = 4 + 7 * k, slice = z.R.slice(from, from + 7);
+      const v = slice.reduce((a, b) => a + b, 0) / slice.length;
+      const a = Math.min(1, Math.abs(v - 1) * 2 + 0.25);
+      const bg = v >= 1 ? `rgba(236,107,47,${a})` : `rgba(75,119,255,${a})`;
+      html += "<td style='background:" + bg + ";color:" + (a > 0.6 ? "#fff" : "var(--fg)") + "'>" + v.toFixed(2) + "</td>";
+    }
+    html += "</tr>";
+  });
+  table.innerHTML = html + "</tbody>";
+  table.querySelectorAll("td.zona").forEach(td => {
+    const pick = () => { const i = +td.dataset.i; sel.value = i === +sel.value ? -1 : i; render(); };
+    td.addEventListener("click", pick);
+    td.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+}
+
+sel.addEventListener("change", render);
+rango.addEventListener("input", render);
+el("reset").addEventListener("click", () => { sel.value = -1; rango.value = N; render(); });
+render();
+</script>

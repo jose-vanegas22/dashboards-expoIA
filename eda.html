@@ -1,0 +1,231 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Análisis exploratorio de datos</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root { --bg:#F3F4F7; --surface:#fff; --fg:#1E1E1E; --muted:#6B6B6B; --line:#E4E6EC; --chip:#F3F4F7;
+  --accent:#EC6B2F; --blue:#4B77FF; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg:#141414; --surface:#1E1E1E; --fg:#F2F2F2; --muted:#9A9A9A; --line:#333; --chip:#2A2A2A; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg:#141414; --surface:#1E1E1E; --fg:#F2F2F2; --muted:#9A9A9A; --line:#333; --chip:#2A2A2A; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 Inter, system-ui, sans-serif;
+  padding-left:max(16px, env(safe-area-inset-left,0px)); padding-right:max(16px, env(safe-area-inset-right,0px)); padding-block:20px; }
+h1, h2 { font-family: Poppins, system-ui, sans-serif; margin:0; text-wrap: balance; }
+h1 { font-size:26px; font-weight:700; } h2 { font-size:17px; font-weight:600; }
+.wrap { max-width:1200px; margin:0 auto; display:grid; gap:16px; }
+header p { margin:6px 0 0; color:var(--muted); max-width:70ch; }
+.card { background:var(--surface); border-radius:16px; padding:18px; min-width:0; }
+.controls { display:flex; flex-wrap:wrap; gap:16px; align-items:end; }
+.controls label { display:grid; gap:6px; font-size:13px; color:var(--muted); min-width:0; }
+select { font:inherit; color:var(--fg); background:var(--chip); border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
+select:focus-visible, button:focus-visible, td.cell:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+button.reset { font:inherit; font-size:13px; color:var(--fg); background:var(--chip); border:1px solid var(--line); border-radius:10px; padding:9px 14px; cursor:pointer; }
+.kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap:16px; }
+.kpi { display:grid; gap:4px; }
+.kpi .label { color:var(--muted); font-size:13px; }
+.kpi .value { font-family:Poppins, sans-serif; font-size:40px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; }
+.kpi .sub { font-size:13px; color:var(--muted); }
+.kpi.warn .value { color:var(--accent); }
+.charts { display:grid; gap:16px; }
+@media (min-width:900px) { .charts.two { grid-template-columns: 1fr 1fr; } }
+.chart-box { position:relative; height:280px; }
+.note { font-size:12px; color:var(--muted); font-style:italic; margin:4px 0 10px; }
+table { border-collapse:separate; border-spacing:3px; font-variant-numeric:tabular-nums; margin: 0 auto; }
+th { font-weight:500; color:var(--muted); font-size:12px; padding:4px 6px; }
+td.cell { width:64px; height:44px; text-align:center; border-radius:8px; font-size:13px; font-weight:600; cursor:default; }
+.legend { display:flex; gap:14px; font-size:12px; color:var(--muted); flex-wrap:wrap; margin-top:10px; }
+.legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:-1px; }
+.l-blue::before { background:var(--blue); } .l-acc::before { background:var(--accent); } .l-gray::before { background:#B9C0CC; }
+.note-foot { font-size:12px; color:var(--muted); font-style:italic; margin:0; }
+@media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Análisis exploratorio de datos</h1>
+    <p>Antes de entrenar un modelo, revisa cómo se distribuyen las variables, qué tan relacionadas están y cuántos casos hay de cada clase.</p>
+  </header>
+
+  <section class="card controls" aria-label="Filtros">
+    <label>Variable para el histograma
+      <select id="variable"></select>
+    </label>
+    <button class="reset" id="reset" type="button">Restablecer</button>
+  </section>
+
+  <section class="kpis" aria-label="Indicadores clave">
+    <div class="card kpi">
+      <span class="label">Registros</span>
+      <span class="value" id="vN">–</span>
+      <span class="sub" id="sN">–</span>
+    </div>
+    <div class="card kpi warn">
+      <span class="label">Clase positiva (enfermos)</span>
+      <span class="value" id="vPos">–</span>
+      <span class="sub">Una fracción pequeña del total: el dato está desbalanceado</span>
+    </div>
+    <div class="card kpi">
+      <span class="label">Exactitud de un modelo que siempre dice “sano”</span>
+      <span class="value" id="vTrampa">–</span>
+      <span class="sub">Parece muy alta, pero no detecta ningún caso positivo</span>
+    </div>
+  </section>
+
+  <section class="charts two">
+    <div class="card">
+      <h2>Distribución de clases</h2>
+      <p class="note">Cuántos ejemplos hay de cada categoría de la variable objetivo.</p>
+      <div class="chart-box"><canvas id="chartClases" role="img" aria-label="Conteo de cada clase"></canvas></div>
+    </div>
+    <div class="card">
+      <h2 id="tituloHist">Histograma</h2>
+      <p class="note">Cómo se reparte la variable seleccionada, separada por clase.</p>
+      <div class="chart-box"><canvas id="chartHist" role="img" aria-label="Histograma de la variable seleccionada por clase"></canvas></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Matriz de correlación</h2>
+    <p class="note">Naranja: relación positiva. Azul: relación negativa. Cuanto más intenso el color, más fuerte la relación. Pasa el cursor para ver el valor.</p>
+    <div style="overflow-x:auto"><table id="corr"></table></div>
+    <div class="legend">
+      <span class="l-acc">Correlación positiva</span>
+      <span class="l-blue">Correlación negativa</span>
+    </div>
+  </section>
+
+  <p class="note-foot">Datos ilustrativos generados para la presentación. No corresponden a pacientes reales.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// Datos ilustrativos: 600 registros, ~8 % en la clase positiva
+const VARS = [
+  { key: "edad", name: "Edad (años)", mu: 45, sd: 13, shift: 6, min: 18, max: 85 },
+  { key: "glucosa", name: "Glucosa (mg/dL)", mu: 92, sd: 12, shift: 38, min: 60, max: 180 },
+  { key: "imc", name: "IMC", mu: 24, sd: 3.5, shift: 5, min: 15, max: 40 },
+  { key: "presion", name: "Presión sistólica (mmHg)", mu: 118, sd: 11, shift: 14, min: 90, max: 170 },
+  { key: "colesterol", name: "Colesterol (mg/dL)", mu: 190, sd: 30, shift: 40, min: 120, max: 300 }
+];
+const N = 600, POS_RATE = 0.08;
+const ORANGE = "#EC6B2F", BLUE = "#4B77FF", GRAY = "#B9C0CC";
+
+function rng(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const g = rng(2026);
+const normal = () => Math.sqrt(-2 * Math.log(g() + 1e-9)) * Math.cos(2 * Math.PI * g());
+
+const ROWS = [];
+for (let i = 0; i < N; i++) {
+  const y = g() < POS_RATE ? 1 : 0;
+  const row = { y };
+  // Las variables se desplazan en los casos positivos, así hay relación real con la clase
+  const z = normal();
+  VARS.forEach(v => {
+    const base = v.mu + v.sd * (normal() * 0.8 + (v.key === "glucosa" || v.key === "imc" ? z * 0.3 : 0));
+    row[v.key] = Math.min(v.max, Math.max(v.min, base + (y ? v.shift : 0)));
+  });
+  ROWS.push(row);
+}
+
+function pearson(a, b) {
+  const n = a.length, ma = a.reduce((s, x) => s + x, 0) / n, mb = b.reduce((s, x) => s + x, 0) / n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) { num += (a[i] - ma) * (b[i] - mb); da += (a[i] - ma) ** 2; db += (b[i] - mb) ** 2; }
+  return num / Math.sqrt(da * db);
+}
+
+const el = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const selV = el("variable");
+VARS.forEach((v, i) => selV.add(new Option(v.name, i)));
+selV.value = 1; // glucosa por defecto
+
+const nPos = ROWS.filter(r => r.y === 1).length, nNeg = N - nPos;
+
+function baseOpts(extra = {}) {
+  const muted = css("--muted"), line = css("--line"), fg = css("--fg");
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: fg, boxWidth: 12 } } },
+    scales: {
+      y: { grid: { color: line }, ticks: { color: muted }, beginAtZero: true, ...(extra.y || {}) },
+      x: { grid: { display: false }, ticks: { color: muted, maxTicksLimit: 10 }, ...(extra.x || {}) }
+    }
+  };
+}
+
+const chartClases = new Chart(el("chartClases"), {
+  type: "bar",
+  data: { labels: ["Sano (0)", "Enfermo (1)"], datasets: [{
+    label: "Registros", data: [nNeg, nPos],
+    backgroundColor: [GRAY, ORANGE], borderRadius: 6
+  }] },
+  options: { ...baseOpts(), plugins: { legend: { display: false } } }
+});
+
+// Histograma con 14 bins para la variable elegida, apilado por clase
+let chartHist = null;
+function histData(v) {
+  const bins = 14, lo = v.min, hi = v.max, w = (hi - lo) / bins;
+  const labels = [], sano = Array(bins).fill(0), enf = Array(bins).fill(0);
+  for (let b = 0; b < bins; b++) labels.push(Math.round(lo + b * w).toString());
+  ROWS.forEach(r => {
+    const b = Math.min(bins - 1, Math.floor((r[v.key] - lo) / w));
+    (r.y ? enf : sano)[b]++;
+  });
+  return { labels, sano, enf };
+}
+function renderHist(idx) {
+  const v = VARS[idx], h = histData(v);
+  el("tituloHist").textContent = "Histograma: " + v.name;
+  const cfg = {
+    type: "bar",
+    data: { labels: h.labels, datasets: [
+      { label: "Sano", data: h.sano, backgroundColor: "rgba(185,192,204,0.85)", borderRadius: 3 },
+      { label: "Enfermo", data: h.enf, backgroundColor: ORANGE, borderRadius: 3 }
+    ] },
+    options: baseOpts({ x: { stacked: true }, y: { stacked: true } })
+  };
+  if (chartHist) { chartHist.destroy(); }
+  chartHist = new Chart(el("chartHist"), cfg);
+}
+
+// Matriz de correlación
+function renderCorr() {
+  const cols = VARS.map(v => ROWS.map(r => r[v.key]));
+  let html = "<thead><tr><th></th>" + VARS.map(v => "<th>" + v.key + "</th>").join("") + "</tr></thead><tbody>";
+  VARS.forEach((vi, i) => {
+    html += "<tr><th>" + vi.key + "</th>";
+    VARS.forEach((_, j) => {
+      const c = i === j ? 1 : pearson(cols[i], cols[j]);
+      const a = Math.min(0.9, Math.abs(c));
+      const bg = c >= 0 ? `rgba(236,107,47,${a})` : `rgba(75,119,255,${a})`;
+      html += `<td class="cell" tabindex="0" title="${vi.key} y ${VARS[j].key}: ${c.toFixed(2)}" style="background:${bg};color:${a > 0.55 ? "#fff" : "var(--fg)"}">${c.toFixed(2)}</td>`;
+    });
+    html += "</tr>";
+  });
+  el("corr").innerHTML = html + "</tbody>";
+}
+
+function render() {
+  const pct = (nPos / N) * 100;
+  el("vN").textContent = N.toLocaleString("es-CO");
+  el("sN").textContent = nNeg + " sanos · " + nPos + " enfermos";
+  el("vPos").textContent = pct.toFixed(0) + " %";
+  el("vTrampa").textContent = (nNeg / N * 100).toFixed(0) + " %";
+  renderHist(+selV.value);
+}
+
+selV.addEventListener("change", render);
+el("reset").addEventListener("click", () => { selV.value = 1; render(); });
+renderCorr();
+render();
+</script>

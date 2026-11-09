@@ -1,0 +1,255 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Monitoreo operativo de planta</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root { --bg:#F3F4F7; --surface:#fff; --fg:#1E1E1E; --muted:#6B6B6B; --line:#E4E6EC; --chip:#F3F4F7;
+  --accent:#EC6B2F; --blue:#4B77FF; --ok:#1FA971; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg:#141414; --surface:#1E1E1E; --fg:#F2F2F2; --muted:#9A9A9A; --line:#333; --chip:#2A2A2A; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg:#141414; --surface:#1E1E1E; --fg:#F2F2F2; --muted:#9A9A9A; --line:#333; --chip:#2A2A2A; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 Inter, system-ui, sans-serif;
+  padding-left:max(16px, env(safe-area-inset-left,0px)); padding-right:max(16px, env(safe-area-inset-right,0px)); padding-block:20px; }
+h1, h2 { font-family: Poppins, system-ui, sans-serif; margin:0; text-wrap: balance; }
+h1 { font-size:26px; font-weight:700; } h2 { font-size:17px; font-weight:600; }
+.wrap { max-width:1200px; margin:0 auto; display:grid; gap:16px; }
+header p { margin:6px 0 0; color:var(--muted); max-width:70ch; }
+.card { background:var(--surface); border-radius:16px; padding:18px; min-width:0; }
+.controls { display:flex; flex-wrap:wrap; gap:16px; align-items:end; }
+.controls label { display:grid; gap:6px; font-size:13px; color:var(--muted); min-width:0; }
+select { font:inherit; color:var(--fg); background:var(--chip); border:1px solid var(--line); border-radius:10px; padding:9px 12px; }
+select:focus-visible, button:focus-visible, td.tap:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+button.reset { font:inherit; font-size:13px; color:var(--fg); background:var(--chip); border:1px solid var(--line); border-radius:10px; padding:9px 14px; cursor:pointer; }
+.kpis { display:grid; grid-template-columns: repeat(auto-fit, minmax(190px,1fr)); gap:16px; }
+.kpi { display:grid; gap:4px; }
+.kpi .label { color:var(--muted); font-size:13px; }
+.kpi .value { font-family:Poppins, sans-serif; font-size:40px; font-weight:700; line-height:1.1; font-variant-numeric:tabular-nums; }
+.kpi .sub { font-size:13px; color:var(--muted); }
+.chip { justify-self:start; font-size:12px; font-weight:600; padding:3px 10px; border-radius:999px; border:1px solid currentColor; }
+.charts { display:grid; gap:16px; }
+@media (min-width:900px) { .charts.two { grid-template-columns: 1.2fr 1fr; } }
+.chart-box { position:relative; height:300px; }
+.note { font-size:12px; color:var(--muted); font-style:italic; margin:4px 0 10px; }
+table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+th { text-align:left; font-weight:500; color:var(--muted); font-size:12px; padding:6px 4px; border-bottom:1px solid var(--line); }
+td { padding:10px 4px; border-bottom:1px solid var(--line); font-size:14px; }
+td.tap { cursor:pointer; }
+tr.sel td { color:var(--accent); font-weight:600; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:0; }
+.legend { display:flex; gap:14px; font-size:12px; color:var(--muted); flex-wrap:wrap; margin-top:8px; }
+.note-foot { font-size:12px; color:var(--muted); font-style:italic; margin:0; }
+@media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Monitoreo operativo de planta</h1>
+    <p>Compara la producción de cada línea con su meta y revisa el inventario frente a su umbral mínimo. Toca una línea en la tabla para filtrarla.</p>
+  </header>
+
+  <section class="card controls" aria-label="Filtros">
+    <label>Línea de producción
+      <select id="linea">
+        <option value="-1">Todas las líneas</option>
+      </select>
+    </label>
+    <label>Producto (inventario)
+      <select id="producto">
+        <option value="-1">Todos los productos</option>
+      </select>
+    </label>
+    <button class="reset" id="reset" type="button">Restablecer</button>
+  </section>
+
+  <section class="kpis" aria-label="Indicadores clave">
+    <div class="card kpi" id="kEf">
+      <span class="label">Eficiencia frente a meta (hoy)</span>
+      <span class="value" id="vEf">–</span>
+      <span class="chip" id="cEf">–</span>
+    </div>
+    <div class="card kpi">
+      <span class="label">Unidades producidas (hoy)</span>
+      <span class="value" id="vUnd">–</span>
+      <span class="sub" id="sUnd">–</span>
+    </div>
+    <div class="card kpi" id="kInv">
+      <span class="label">Productos bajo umbral</span>
+      <span class="value" id="vInv">–</span>
+      <span class="sub" id="sInv">–</span>
+    </div>
+  </section>
+
+  <section class="charts two">
+    <div class="card">
+      <h2>Producción por hora frente a la meta</h2>
+      <p class="note">Línea sólida: producción real. Línea punteada: meta por hora. Cuando la producción cae por debajo de la meta, el problema ya es visible.</p>
+      <div class="chart-box"><canvas id="chartP" role="img" aria-label="Producción por hora frente a la meta"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Estado de las líneas</h2>
+      <p class="note">Semáforo según el porcentaje frente a la meta del día.</p>
+      <table>
+        <thead><tr><th>Línea</th><th>Frente a meta</th><th>Estado</th></tr></thead>
+        <tbody id="tLineas"></tbody>
+      </table>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--ok)"></span>≥ 95 % en meta</span>
+        <span><span class="dot" style="background:#F2B233"></span>85–95 % atención</span>
+        <span><span class="dot" style="background:var(--accent)"></span>&lt; 85 % alerta</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Niveles de inventario frente al umbral mínimo</h2>
+    <p class="note">Línea punteada: umbral mínimo. Un nivel que se acerca o cruza el umbral necesita reabastecimiento.</p>
+    <div class="chart-box"><canvas id="chartI" role="img" aria-label="Niveles de inventario frente al umbral mínimo"></canvas></div>
+  </section>
+
+  <p class="note-foot">Datos ilustrativos generados para la presentación. No corresponden a una planta real.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// Datos ilustrativos: 4 líneas de producción por hora (08:00 a 17:00) y 4 productos de inventario por día
+const HORAS = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"];
+const LINEAS = [
+  { name: "Línea A · Empaque", meta: 200, base: 205, caida: 0.10, seed: 3 },
+  { name: "Línea B · Ensamble", meta: 180, base: 186, caida: 0.02, seed: 8 },
+  { name: "Línea C · Llenado", meta: 220, base: 228, caida: 0.14, seed: 15 },
+  { name: "Línea D · Etiquetado", meta: 150, base: 152, caida: 0.04, seed: 21 }
+];
+const PRODUCTOS = [
+  { name: "Tapas", umbral: 300, ini: 620, rate: 0.04 },
+  { name: "Empaques", umbral: 180, ini: 410, rate: 0.03 },
+  { name: "Etiquetas", umbral: 500, ini: 640, rate: 0.01 },
+  { name: "Botellas", umbral: 240, ini: 280, rate: 0.02 }
+];
+const DIAS = Array.from({ length: 14 }, (_, i) => "D" + (i + 1));
+const ORANGE = "#EC6B2F", BLUE = "#4B77FF", OK = "#1FA971", AMBER = "#F2B233";
+
+function rng(seed) {
+  return function () {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// Producción real por hora: cae con el tiempo según la línea
+const PROD = LINEAS.map(l => {
+  const g = rng(l.seed);
+  return HORAS.map((_, h) => Math.round(l.base * (1 - l.caida * (h / 9)) + (g() - 0.5) * 8));
+});
+
+// Inventario diario de cada producto (consumo con ruido)
+const INV = PRODUCTOS.map(p => {
+  const g = rng(p.ini);
+  let v = p.ini; const out = [];
+  for (let d = 0; d < 14; d++) {
+    v = Math.max(0, v - p.rate * p.ini * (0.8 + g() * 0.4));
+    out.push(Math.round(v));
+  }
+  return out;
+});
+
+const el = id => document.getElementById(id);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const selL = el("linea"), selP = el("producto");
+LINEAS.forEach((l, i) => selL.add(new Option(l.name, i)));
+PRODUCTOS.forEach((p, i) => selP.add(new Option(p.name, i)));
+
+function baseOpts(yScale) {
+  const muted = css("--muted"), line = css("--line"), fg = css("--fg");
+  return {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: { legend: { labels: { color: fg, boxWidth: 12 } } },
+    scales: {
+      y: { grid: { color: line }, ticks: { color: muted }, ...yScale },
+      x: { grid: { display: false }, ticks: { color: muted, maxTicksLimit: 10 } }
+    }
+  };
+}
+
+const chartP = new Chart(el("chartP"), {
+  type: "line",
+  data: { labels: HORAS, datasets: [
+    { label: "Producción real", data: [], borderWidth: 3, pointRadius: 2, tension: 0.3, borderColor: BLUE },
+    { label: "Meta por hora", data: [], borderWidth: 2, borderDash: [6, 6], pointRadius: 0, borderColor: css("--muted") }
+  ] },
+  options: baseOpts({ beginAtZero: true })
+});
+const chartI = new Chart(el("chartI"), {
+  type: "line",
+  data: { labels: DIAS, datasets: [] },
+  options: baseOpts({ beginAtZero: true })
+});
+
+function estado(pct) {
+  if (pct >= 95) return { txt: "En meta", color: OK };
+  if (pct >= 85) return { txt: "Atención", color: AMBER };
+  return { txt: "Alerta", color: ORANGE };
+}
+
+function render() {
+  const li = +selL.value, pi = +selP.value;
+
+  // Gráfica de producción
+  const sel = li >= 0 ? [li] : LINEAS.map((_, i) => i);
+  const real = HORAS.map((_, h) => sel.reduce((a, i) => a + PROD[i][h], 0));
+  const meta = HORAS.map(() => sel.reduce((a, i) => a + LINEAS[i].meta, 0));
+  chartP.data.datasets[0].data = real;
+  chartP.data.datasets[1].data = meta;
+  chartP.update();
+
+  // KPI de eficiencia del día
+  const totReal = real.reduce((a, b) => a + b, 0), totMeta = meta.reduce((a, b) => a + b, 0);
+  const ef = (totReal / totMeta) * 100;
+  const e = estado(ef);
+  el("vEf").textContent = ef.toFixed(0) + " %";
+  el("cEf").textContent = e.txt;
+  el("cEf").style.color = e.color;
+  el("vUnd").textContent = totReal.toLocaleString("es-CO");
+  el("sUnd").textContent = "Meta del día: " + totMeta.toLocaleString("es-CO");
+
+  // Tabla de líneas (toca para filtrar)
+  el("tLineas").innerHTML = LINEAS.map((l, i) => {
+    const r = PROD[i].reduce((a, b) => a + b, 0), m = l.meta * HORAS.length;
+    const p = (r / m) * 100, s = estado(p);
+    return `<tr class="tap ${i === li ? "sel" : ""}" data-i="${i}" tabindex="0">
+      <td>${l.name}</td><td>${p.toFixed(0)} %</td>
+      <td><span class="dot" style="background:${s.color}"></span>${s.txt}</td></tr>`;
+  }).join("");
+  el("tLineas").querySelectorAll("tr").forEach(tr => {
+    const pick = () => { const i = +tr.dataset.i; selL.value = i === li ? -1 : i; render(); };
+    tr.addEventListener("click", pick);
+    tr.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); pick(); } });
+  });
+
+  // Inventario
+  const invSel = pi >= 0 ? [pi] : PRODUCTOS.map((_, i) => i);
+  const colors = [ORANGE, BLUE, OK, "#9B59B6"];
+  const datasets = invSel.map(i => ({
+    label: PRODUCTOS[i].name, data: INV[i], borderWidth: 3, pointRadius: 0, tension: 0.3, borderColor: colors[i]
+  }));
+  if (invSel.length === 1) {
+    const u = PRODUCTOS[invSel[0]].umbral;
+    datasets.push({ label: "Umbral mínimo", data: DIAS.map(() => u), borderDash: [6, 6], borderWidth: 2, pointRadius: 0, borderColor: css("--muted") });
+  }
+  chartI.data.datasets = datasets;
+  chartI.update();
+
+  const bajo = PRODUCTOS.filter((p, i) => INV[i][13] < p.umbral).length;
+  el("vInv").textContent = bajo + " de " + PRODUCTOS.length;
+  el("sInv").textContent = "Según el último día registrado";
+  el("kInv").className = "card kpi " + (bajo > 0 ? "hot" : "cool");
+}
+
+selL.addEventListener("change", render);
+selP.addEventListener("change", render);
+el("reset").addEventListener("click", () => { selL.value = -1; selP.value = -1; render(); });
+render();
+</script>
